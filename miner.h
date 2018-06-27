@@ -1316,6 +1316,20 @@ struct pool {
 	struct thread_q *stratum_q;
 	int sshares; /* stratum shares submitted waiting on response */
 
+	//ethminer variables
+        bool eth_task_change;
+	bool eth_seed_change;
+        bool eth_diff_change;
+        bool eth_have_result;
+	bool eth_result_send;
+
+        uint8_t eth_task[32];
+        uint8_t eth_seed[32];
+        uint8_t eth_diff[32];
+        uint8_t eth_nonce[8];
+        uint8_t eth_result[32];
+	
+	uint32_t block_index;
 	/* GBT  variables */
 	bool has_gbt;
 	cglock_t gbt_lock;

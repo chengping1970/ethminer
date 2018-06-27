@@ -39,7 +39,7 @@
 # include <mmsystem.h>
 #endif
 #include <sched.h>
-
+#include <sha3.h>
 #include "miner.h"
 #include "elist.h"
 #include "compat.h"
@@ -1913,6 +1913,7 @@ char *recv_line(struct pool *pool)
 	}
 
 	buflen = strlen(pool->sockbuf);
+	//applog(LOG_NOTICE, "%s", pool->sockbuf);
 	tok = strtok(pool->sockbuf, "\n");
 	if (!tok) {
 		applog(LOG_DEBUG, "Failed to parse a \\n terminated string in recv_line");
@@ -2354,8 +2355,94 @@ static bool show_message(struct pool *pool, json_t *val)
 	return true;
 }
 
+static void convert_string_array(uint8_t* dest, char* s)
+{
+        char temp[3] = "  ";
+        uint8_t i, j, a = 0;
+        for (i = 0; i < 32;i++){
+                memcpy(temp, &s[2+i*2], 2);
+                for (j = 0;j < 2;j++)
+                {
+                	a = a * 16;
+                	if (temp[j] >= '0' && temp[j] <= '9')
+                        	a += temp[j] - '0';
+                        else if (temp[j] >= 'a' && temp[j] <= 'f')
+                        	a += temp[j] + 10 - 'a';
+                        else if (temp[j] >= 'A' && temp[j] <= 'F')
+                        	a += temp[j] + 10 - 'A';
+                }
+                dest[i] = a;
+        }
+}
+
+static int get_block_index(uint8_t* seed_hash)
+{
+        uint32_t i, j;
+        uint8_t in[32], out[32];
+        memset(in, 0, 32);
+        int block;
+        for(i = 0; i < 2048; i++){
+                SHA3_256(out, in, 32);
+                memcpy(in, out, 32);
+                if(memcmp(seed_hash, out, 32) == 0)
+		{
+                        break;
+                }
+        }
+        return i+1;
+}
+
 bool parse_method(struct pool *pool, char *s)
 {
+	json_t *val = NULL, *err_val, *result;
+        json_error_t err;
+	char *task, *seed, *diff;
+ 	uint8_t data[32];
+	int index;
+	uint32_t s1, s2;
+	uint64_t s64;
+	if (!s)
+            return false;
+        val = JSON_LOADS(s, &err);
+	if (!val) {
+                applog(LOG_INFO, "JSON decode failed(%d): %s", err.line, err.text);
+                return false;
+        }
+	
+	result = json_object_get(val, "result");
+	if (!json_is_array(result))
+                return false;
+	task = json_array_string(result, 0);
+        seed = json_array_string(result, 1);
+        diff = json_array_string(result, 2);
+	convert_string_array(data, seed);
+	if (memcmp(data, pool->eth_seed, 32) != 0)
+	{
+		memcpy(pool->eth_seed, data, 32);
+		applog(LOG_NOTICE, "ETH new seed: %s", seed);
+		pool->eth_seed_change = true;
+		pool->block_index = get_block_index(data);
+		applog(LOG_NOTICE, "ETH block index is %d", pool->block_index);
+	}
+	
+	convert_string_array(data, diff);
+        if (memcmp(data, pool->eth_diff, 32) != 0)
+        {
+                memcpy(pool->eth_diff, data, 32);
+                applog(LOG_NOTICE, "ETH new diff: %s", diff);
+                pool->eth_diff_change = true;
+        }
+	
+	convert_string_array(data, task);
+        if (memcmp(data, pool->eth_task, 32) != 0)
+        {
+                memcpy(pool->eth_task, data, 32);
+                applog(LOG_NOTICE, "ETH new task: %s", task);
+                pool->eth_task_change = true;
+        }
+
+	return true;
+#if 0
 	json_t *val = NULL, *method, *err_val, *params;
 	json_error_t err;
 	bool ret = false;
@@ -2430,6 +2517,7 @@ out_decref:
 	json_decref(val);
 out:
 	return ret;
+#endif
 }
 
 bool auth_stratum(struct pool *pool)
@@ -2438,10 +2526,13 @@ bool auth_stratum(struct pool *pool)
 	char s[RBUFSIZE], *sret = NULL;
 	json_error_t err;
 	bool ret = false;
-
+	
+#if 0
 	sprintf(s, "{\"id\": %d, \"method\": \"mining.authorize\", \"params\": [\"%s\", \"%s\"]}",
 		swork_id++, pool->rpc_user, pool->rpc_pass);
-
+#else
+	sprintf(s, "{\"id\": %d, \"worker\": \"miner\", \"method\": \"eth_submitLogin\", \"params\": [\"%s\"]}", swork_id++, pool->rpc_user);
+#endif
 	if (!stratum_send(pool, s, strlen(s)))
 		return ret;
 
@@ -2480,12 +2571,15 @@ bool auth_stratum(struct pool *pool)
 	applog(LOG_INFO, "Stratum authorisation success for pool %d", pool->pool_no);
 	pool->probed = true;
 	successful_connect = true;
-
-	if (opt_suggest_diff) {
+	pool->stratum_notify = true;
+	
+	sprintf(s, "{\"id\": %d, \"method\": \"eth_getWork\",\"params\":[]}", 5);
+	stratum_send(pool, s, strlen(s));
+	/*if (opt_suggest_diff) {
 		sprintf(s, "{\"id\": %d, \"method\": \"mining.suggest_difficulty\", \"params\": [%d]}",
 			swork_id++, opt_suggest_diff);
 		stratum_send(pool, s, strlen(s));
-	}
+	} */
 out:
 	json_decref(val);
 	return ret;
@@ -2918,7 +3012,7 @@ resend:
 	}
 
 	sockd = true;
-
+#if 0
 	if (recvd) {
 		/* Get rid of any crap lying around if we're resending */
 		clear_sock(pool);
@@ -3011,7 +3105,7 @@ resend:
 
 	if (sessionid)
 		applog(LOG_DEBUG, "Pool %d stratum session id: %s", pool->pool_no, pool->sessionid);
-
+#endif
 	ret = true;
 out:
 	if (ret) {

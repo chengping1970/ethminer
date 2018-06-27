@@ -5151,7 +5151,7 @@ static void signal_work_update(void)
 {
 	int i;
 
-	applog(LOG_INFO, "Work update message received");
+	//applog(LOG_INFO, "Work update message received");
 
 	cgtime(&update_tv_start);
 	rd_lock(&mining_thr_lock);
@@ -6780,7 +6780,9 @@ static void *stratum_rthread(void *userdata)
 		/* Check this pool hasn't died while being a backup pool and
 		 * has not had its idle flag cleared */
 		stratum_resumed(pool);
-
+		if (!parse_method(pool, s))
+			applog(LOG_INFO, "Unknown stratum msg: %s", s);
+#if 0
 		if (!parse_method(pool, s) && !parse_stratum_response(pool, s))
 			applog(LOG_INFO, "Unknown stratum msg: %s", s);
 		else if (pool->swork.clean) {
@@ -6794,6 +6796,7 @@ static void *stratum_rthread(void *userdata)
 			test_work_current(work);
 			free_work(work);
 		}
+#endif
 		free(s);
 	}
 
@@ -10388,7 +10391,11 @@ begin_bench:
 	sd_notify(false, "READY=1\n"
 		"STATUS=Started");
 #endif
-
+	while (1)
+	{
+		cgsleep_ms(20);
+		signal_work_update();
+	}
 	/* Once everything is set up, main() becomes the getwork scheduler */
 	while (42) {
 		int ts, max_staged = max_queue;

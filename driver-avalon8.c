@@ -16,7 +16,8 @@
 #include "crc.h"
 #include "sha2.h"
 #include "hexdump.c"
-
+#include "mt64.h"
+#include "data_sizes.h"
 #define get_fan_pwm(v)	(AVA8_PWM_MAX - (v) * AVA8_PWM_MAX / 100)
 
 int opt_avalon8_temp_target = AVA8_DEFAULT_TEMP_TARGET;
@@ -869,6 +870,30 @@ out:
 	return err;
 }
 
+#if 0 //auc data demo
+#define ETH_DATA_LENGTH 44
+static uint8_t auc_xfer_head[8] = {0x34, 0x00, 0x00, 0xA5, 0x2C, 0x2C, 0x60, 0x00};
+static uint8_t auc_read_head[8] = {0x34, 0x00, 0x00, 0xA4, 0x2C, 0x00, 0x60, 0x03};
+static uint8_t eth_seed[32] = 
+{
+0xee ,0x63 ,0x42 ,0x2e ,0x92 ,0xcf ,0x28 ,0x18 ,0x36 ,0x46 ,0xf5 ,0x9a ,0x75 ,0x15 ,0x79 ,0xcc ,
+0xe4 ,0xe6 ,0x76 ,0x24 ,0x2d ,0xa4 ,0x0e ,0xc0 ,0x68 ,0xbf ,0x1c ,0x3a ,0x94 ,0x00 ,0x99 ,0xb9
+};
+static uint8_t eth_task[32] = 
+{
+0x65 ,0xf9 ,0x63 ,0x71 ,0xe8 ,0xad ,0x63 ,0x9f ,0x35 ,0x74 ,0x08 ,0x7a ,0x06 ,0x01 ,0x37 ,0xb5 ,
+0xdd ,0x14 ,0x1d ,0xf8 ,0xd8 ,0x92 ,0xb6 ,0x09 ,0x18 ,0xc0 ,0xb5 ,0x1f ,0x76 ,0x31 ,0x77 ,0x2a
+};
+static uint8_t eth_diff[32] = 
+{
+0x00 ,0x00 ,0x00 ,0x00 ,0xff ,0xff ,0xff ,0xff ,0xff ,0xff ,0xff ,0xff ,0xff ,0xff ,0xff ,0xff ,
+0xff ,0xff ,0xff ,0xff ,0xff ,0xff ,0xff ,0xff ,0xff ,0xff ,0xff ,0xff ,0xff ,0xff ,0xff ,0xff
+};
+static uint8_t start_nonce[8] = {0x0a ,0xef ,0x86 ,0xbc ,0x84 ,0xae ,0x5e ,0xab};
+static uint8_t cache_size[4] = {0x00, 0x00, 0x01, 0xF3};
+static uint8_t full_size[4] = {0x00, 0x00, 0x7C, 0xC0};
+#endif
+
 static int avalon8_auc_init(struct cgpu_info *avalon8, char *ver)
 {
 	struct avalon8_iic_info iic_info;
@@ -930,6 +955,60 @@ static int avalon8_auc_init(struct cgpu_info *avalon8, char *ver)
 
 	applog(LOG_DEBUG, "%s-%d: USB2IIC Converter version: %s!", avalon8->drv->name, avalon8->device_id, ver);
 
+	/*test*/
+	#if 0 //auc data demo
+	memcpy(wbuf, auc_xfer_head, 8);
+	memcpy(&wbuf[8], cache_size, 4);
+	memcpy(&wbuf[12], full_size, 4);
+	memcpy(&wbuf[16], eth_seed, 32);
+	rlen = ETH_DATA_LENGTH;
+	memset(rbuf, 0, AVA8_AUC_P_SIZE);
+	err = avalon8_auc_xfer(avalon8, wbuf, AVA8_AUC_P_SIZE, &wlen, rbuf, rlen, &rlen);
+	if (err) {
+		applog(LOG_ERR, "%s-%d: Failed xfer auc", avalon8->drv->name, avalon8->device_id);
+		return 1;
+	}
+
+	hexdump(rbuf, AVA8_AUC_P_SIZE);
+
+	memcpy(wbuf, auc_xfer_head, 8);
+	memcpy(&wbuf[8], start_nonce, 8);
+	memcpy(&wbuf[16], eth_task, 32);
+	wbuf[7] = 1;
+	rlen = ETH_DATA_LENGTH;
+	memset(rbuf, 0, AVA8_AUC_P_SIZE);
+	err = avalon8_auc_xfer(avalon8, wbuf, AVA8_AUC_P_SIZE, &wlen, rbuf, rlen, &rlen);
+	if (err) {
+		applog(LOG_ERR, "%s-%d: Failed xfer auc", avalon8->drv->name, avalon8->device_id);
+		return 1;
+	}
+
+	hexdump(rbuf, AVA8_AUC_P_SIZE);
+
+	memcpy(wbuf, auc_xfer_head, 8);
+	memcpy(&wbuf[8], eth_diff, 32);
+	wbuf[7] = 2;
+	rlen = ETH_DATA_LENGTH;
+	memset(rbuf, 0, AVA8_AUC_P_SIZE);
+	err = avalon8_auc_xfer(avalon8, wbuf, AVA8_AUC_P_SIZE, &wlen, rbuf, rlen, &rlen);
+	if (err) {
+		applog(LOG_ERR, "%s-%d: Failed xfer auc", avalon8->drv->name, avalon8->device_id);
+		return 1;
+	}
+
+	hexdump(rbuf, AVA8_AUC_P_SIZE);
+	
+	memcpy(wbuf, auc_read_head, 8);
+	rlen = ETH_DATA_LENGTH;
+	memset(rbuf, 0, AVA8_AUC_P_SIZE);
+	err = avalon8_auc_xfer(avalon8, wbuf, AVA8_AUC_P_SIZE, &wlen, rbuf, rlen, &rlen);
+	if (err) {
+		applog(LOG_ERR, "%s-%d: Failed read auc", avalon8->drv->name, avalon8->device_id);
+		return 1;
+	}
+
+	hexdump(rbuf, AVA8_AUC_P_SIZE);
+	#endif
 	return 0;
 }
 
@@ -991,6 +1070,7 @@ static int avalon8_iic_xfer_pkg(struct cgpu_info *avalon8, uint8_t slave_addr,
 		if (unlikely(avalon8->usbinfo.nodev))
 			return AVA8_SEND_ERROR;
 
+		#if 1
 		iic_info.iic_op = AVA8_IIC_XFER;
 		iic_info.iic_param.slave_addr = slave_addr;
 
@@ -1007,7 +1087,7 @@ static int avalon8_iic_xfer_pkg(struct cgpu_info *avalon8, uint8_t slave_addr,
 						avalon8->drv->name, avalon8->device_id, slave_addr,
 						err, rcnt, rlen);
 
-				cgsleep_ms(5 * 1000); /* Wait MM reset */
+				cgsleep_ms(5 * 1000); // Wait MM reset
 				if (avalon8_auc_init(avalon8, info->auc_version)) {
 					applog(LOG_WARNING, "%s-%d: Failed to re-init auc, unplugging for new hotplug",
 					       avalon8->drv->name, avalon8->device_id);
@@ -1021,6 +1101,7 @@ static int avalon8_iic_xfer_pkg(struct cgpu_info *avalon8, uint8_t slave_addr,
 			memcpy((char *)ret, rbuf + 4, AVA8_READ_SIZE);
 
 		info->xfer_err_cnt = 0;
+		#endif
 	}
 
 	if (info->connecter == AVA8_CONNECTER_IIC) {
@@ -1055,9 +1136,9 @@ static int avalon8_send_bc_pkgs(struct cgpu_info *avalon8, const struct avalon8_
 {
 	int ret;
 
-	do {
+	/*do {
 		ret = avalon8_iic_xfer_pkg(avalon8, AVA8_MODULE_BROADCAST, pkg, NULL);
-	} while (ret != AVA8_SEND_OK);
+	} while (ret != AVA8_SEND_OK);*/
 
 	return 0;
 }
@@ -1258,14 +1339,15 @@ static struct cgpu_info *avalon8_iic_detect(void)
 }
 
 static void detect_modules(struct cgpu_info *avalon8);
-
+static char auc_connect = 0;
 static struct cgpu_info *avalon8_auc_detect(struct libusb_device *dev, struct usb_find_devices *found)
 {
 	int i, modules = 0;
 	struct avalon8_info *info;
 	struct cgpu_info *avalon8 = usb_alloc_cgpu(&avalon8_drv, 1);
 	char auc_ver[AVA8_AUC_VER_LEN];
-
+	
+	applog(LOG_DEBUG, "avalon8_auc_detect ......");
 	if (!usb_init(avalon8, dev, found)) {
 		applog(LOG_ERR, "avalon8 failed usb_init");
 		avalon8 = usb_free_cgpu(avalon8);
@@ -1277,8 +1359,10 @@ static struct cgpu_info *avalon8_auc_detect(struct libusb_device *dev, struct us
 
 	/* We try twice on AUC init */
 	if (avalon8_auc_init(avalon8, auc_ver) && avalon8_auc_init(avalon8, auc_ver))
+	{
+		applog(LOG_DEBUG, "fail auc init");
 		return NULL;
-
+	}
 	applog(LOG_INFO, "%s-%d: Found at %s", avalon8->drv->name, avalon8->device_id,
 	       avalon8->device_path);
 
@@ -1294,8 +1378,9 @@ static struct cgpu_info *avalon8_auc_detect(struct libusb_device *dev, struct us
 		info->enable[i] = 0;
 
 	info->connecter = AVA8_CONNECTER_AUC;
-
-	detect_modules(avalon8);
+	auc_connect = 1;
+	info->enable[0] = true;
+	/*detect_modules(avalon8);
 	for (i = 0; i < AVA8_DEFAULT_MODULARS; i++)
 		modules += info->enable[i];
 
@@ -1304,9 +1389,9 @@ static struct cgpu_info *avalon8_auc_detect(struct libusb_device *dev, struct us
 		free(info);
 		avalon8 = usb_free_cgpu(avalon8);
 		return NULL;
-	}
+	}*/
 
-	/* We have an avalon8 AUC connected */
+		/* We have an avalon8 AUC connected */
 	avalon8->threads = 1;
 	add_cgpu(avalon8);
 
@@ -1317,7 +1402,9 @@ static struct cgpu_info *avalon8_auc_detect(struct libusb_device *dev, struct us
 
 static inline void avalon8_detect(bool __maybe_unused hotplug)
 {
-	usb_detect(&avalon8_drv, avalon8_auc_detect);
+	//applog(LOG_DEBUG, "avalon8_detect ......%d", auc_connect);
+	if (auc_connect == 0)
+		usb_detect(&avalon8_drv, avalon8_auc_detect);
 	if (!hotplug && opt_avalon8_iic_detect)
 		avalon8_iic_detect();
 }
@@ -1544,7 +1631,7 @@ static int polling(struct cgpu_info *avalon8)
 			send_pkg.data[8] = 0x1;
 		}
 
-		avalon8_init_pkg(&send_pkg, AVA8_P_POLLING, 1, 1);
+		/*avalon8_init_pkg(&send_pkg, AVA8_P_POLLING, 1, 1);
 		ret = avalon8_iic_xfer_pkg(avalon8, i, &send_pkg, &ar);
 		if (ret == AVA8_SEND_OK)
 			decode_err = decode_pkg(avalon8, &ar, i);
@@ -1569,7 +1656,7 @@ static int polling(struct cgpu_info *avalon8)
 				hexdump((uint8_t *)&ar, sizeof(ar));
 				detach_module(avalon8, i);
 			}
-		}
+		}*/
 	}
 
 	return 0;
@@ -1864,9 +1951,142 @@ static void avalon8_set_finish(struct cgpu_info *avalon8, int addr)
 	avalon8_iic_xfer_pkg(avalon8, addr, &send_pkg, NULL);
 }
 
+#define ETH_DATA_LENGTH 44
+static uint8_t auc_xfer_head[8] = {0x34, 0x00, 0x00, 0xA5, 0x2C, 0x2C, 0x60, 0x00};
+static uint8_t auc_read_head[8] = {0x34, 0x00, 0x00, 0xA4, 0x2C, 0x00, 0x60, 0x03};
+
+static int writeTask(struct cgpu_info *avalon8, struct pool *pool){
+        int err, wlen, rlen;
+        uint8_t wbuf[AVA8_AUC_P_SIZE];
+        uint8_t rbuf[AVA8_AUC_P_SIZE];
+	uint64_t start_nonce;
+	
+	memcpy(wbuf, auc_xfer_head, 8);
+	wbuf[7] = 1;
+	init_genrand64(time(NULL));
+        start_nonce = genrand64_int64();
+	wbuf[8] = start_nonce>>56;
+        wbuf[9] = start_nonce>>48;
+        wbuf[10] = start_nonce>>40;
+        wbuf[11] = start_nonce>>32;
+        wbuf[12] = start_nonce>>24;
+        wbuf[13] = start_nonce>>16;
+        wbuf[14] = start_nonce>>8;
+        wbuf[15] = start_nonce;
+        applog(LOG_NOTICE, "start nonce 0x%02x%02x%02x%02x%02x%02x%02x%02x", wbuf[8], wbuf[9], wbuf[10], wbuf[11],wbuf[12], wbuf[13],wbuf[14], wbuf[15]);
+        memcpy(&wbuf[16], pool->eth_task, 32);
+        rlen = ETH_DATA_LENGTH;
+        memset(rbuf, 0, AVA8_AUC_P_SIZE);
+        err = avalon8_auc_xfer(avalon8, wbuf, AVA8_AUC_P_SIZE, &wlen, rbuf, rlen, &rlen);
+        if (err) {
+                applog(LOG_ERR, "%s-%d: Failed xfer auc", avalon8->drv->name, avalon8->device_id);
+                return 1;
+        }
+        hexdump(rbuf, AVA8_AUC_P_SIZE);
+        return 0;
+}
+
+static int writeSeed(struct cgpu_info *avalon8, struct pool *pool){
+        int err, wlen, rlen;
+        uint64_t cache_size, dag_size;
+	uint8_t wbuf[AVA8_AUC_P_SIZE];
+        uint8_t rbuf[AVA8_AUC_P_SIZE];
+
+        memcpy(wbuf, auc_xfer_head, 8);
+        cache_size = cache_sizes[pool->block_index]/64;
+	wbuf[8] = cache_size>>24;
+	wbuf[9] = cache_size>>16;
+	wbuf[10] = cache_size>>8;
+	wbuf[11] = cache_size>>0;
+	dag_size = dag_sizes[pool->block_index]/64;
+	wbuf[12] = dag_size>>24;
+        wbuf[13] = dag_size>>16;
+        wbuf[14] = dag_size>>8;
+        wbuf[15] = dag_size>>0;
+        memcpy(&wbuf[16], pool->eth_seed, 32);
+        rlen = ETH_DATA_LENGTH;
+        memset(rbuf, 0, AVA8_AUC_P_SIZE);
+        err = avalon8_auc_xfer(avalon8, wbuf, AVA8_AUC_P_SIZE, &wlen, rbuf, rlen, &rlen);
+        if (err) {
+                applog(LOG_ERR, "%s-%d: Failed xfer auc", avalon8->drv->name, avalon8->device_id);
+                return 1;
+        }
+        hexdump(rbuf, AVA8_AUC_P_SIZE);
+        return 0;
+}
+
+static int writeDiff(struct cgpu_info *avalon8, struct pool *pool){
+        int err, wlen, rlen;
+        uint8_t wbuf[AVA8_AUC_P_SIZE];
+        uint8_t rbuf[AVA8_AUC_P_SIZE];
+
+        memcpy(wbuf, auc_xfer_head, 8);
+	wbuf[7] = 2;
+        memcpy(&wbuf[8], pool->eth_diff, 32);
+        rlen = ETH_DATA_LENGTH;
+        memset(rbuf, 0, AVA8_AUC_P_SIZE);
+        err = avalon8_auc_xfer(avalon8, wbuf, AVA8_AUC_P_SIZE, &wlen, rbuf, rlen, &rlen);
+        if (err) {
+                applog(LOG_ERR, "%s-%d: Failed xfer auc", avalon8->drv->name, avalon8->device_id);
+                return 1;
+        }
+        hexdump(rbuf, AVA8_AUC_P_SIZE);
+        return 0;
+}
+
+static int readStatus(struct cgpu_info *avalon8, struct pool *pool){
+        int err, wlen, rlen;
+        uint8_t wbuf[AVA8_AUC_P_SIZE];
+        uint8_t rbuf[AVA8_AUC_P_SIZE];
+
+        memcpy(wbuf, auc_read_head, 8);
+        wbuf[7] = 0x04;
+        rlen = ETH_DATA_LENGTH;
+        memset(rbuf, 0, AVA8_AUC_P_SIZE);
+        err = avalon8_auc_xfer(avalon8, wbuf, AVA8_AUC_P_SIZE, &wlen, rbuf, rlen, &rlen);
+        if (err) {
+                applog(LOG_ERR, "%s-%d: Failed read auc", avalon8->drv->name, avalon8->device_id);
+                return 1;
+        }
+        if (rbuf[4]&0x80)
+        {
+                pool->eth_have_result = true;
+		hexdump(rbuf, AVA8_AUC_P_SIZE);
+		applog(LOG_NOTICE, "have a result");
+        }
+        //hexdump(rbuf, AVA8_AUC_P_SIZE);
+        return 0;
+;
+}
+
+static int readResult(struct cgpu_info *avalon8, struct pool *pool){
+        int err, wlen, rlen;
+        uint8_t wbuf[AVA8_AUC_P_SIZE];
+        uint8_t rbuf[AVA8_AUC_P_SIZE];
+
+        memcpy(wbuf, auc_read_head, 8);
+        rlen = ETH_DATA_LENGTH;
+        memset(rbuf, 0, AVA8_AUC_P_SIZE);
+        err = avalon8_auc_xfer(avalon8, wbuf, AVA8_AUC_P_SIZE, &wlen, rbuf, rlen, &rlen);
+        if (err) {
+                applog(LOG_ERR, "%s-%d: Failed read auc", avalon8->drv->name, avalon8->device_id);
+                return 1;
+        }
+        if (memcmp(&rbuf[12], pool->eth_result, 32) != 0)
+        {
+		memcpy(pool->eth_nonce, &rbuf[4], 8);
+                memcpy(pool->eth_result, &rbuf[12], 32);
+                pool->eth_result_send = true;
+        }
+        hexdump(rbuf, AVA8_AUC_P_SIZE);
+        return 0;
+}
+
+
 static void avalon8_sswork_update(struct cgpu_info *avalon8)
 {
-	struct avalon8_info *info = avalon8->device_data;
+#if 0 
+	struct avalon8_info *info = avalon8->device_data;	
 	struct thr_info *thr = avalon8->thr[0];
 	struct pool *pool;
 	int coinbase_len_posthash, coinbase_len_prehash;
@@ -1905,7 +2125,6 @@ static void avalon8_sswork_update(struct cgpu_info *avalon8)
 		return;
 	}
 	cg_wlock(&info->update_lock);
-
 	/* Step 2: Send out stratum pkgs */
 	cg_rlock(&pool->data_lock);
 	info->pool_no = pool->pool_no;
@@ -1919,6 +2138,47 @@ static void avalon8_sswork_update(struct cgpu_info *avalon8)
 	/* Step 3: Send out finish pkg */
 	avalon8_stratum_finish(avalon8);
 	cg_wunlock(&info->update_lock);
+#endif
+	struct pool *pool = current_pool();
+        if(pool)
+	{
+		if (pool->eth_have_result)
+		{
+			applog(LOG_DEBUG, "avalon8_sswork_update: readResult");
+			if (readResult(avalon8, pool) == 0)
+			{
+				pool->eth_have_result = false;
+			}		
+		}
+		else if (pool->eth_seed_change)
+		{
+			applog(LOG_DEBUG, "avalon8_sswork_update: writeSeed");
+			if (writeSeed(avalon8, pool) == 0)
+			{
+				pool->eth_seed_change = false;
+			}
+		}
+		else if (pool->eth_diff_change)
+		{
+			applog(LOG_DEBUG, "avalon8_sswork_update: writeDiff");
+			if (writeDiff(avalon8, pool) == 0)
+			{
+				pool->eth_diff_change = false;
+			}
+		}
+		else if (pool->eth_task_change)
+		{
+			applog(LOG_DEBUG, "avalon8_sswork_update: writeTask");
+			if (writeTask(avalon8, pool) == 0)
+			{
+				pool->eth_task_change = false;
+			}
+		}			
+		else
+		{
+			readStatus(avalon8, pool);
+		}
+        }
 }
 
 static int64_t avalon8_scanhash(struct thr_info *thr)
@@ -1954,7 +2214,7 @@ static int64_t avalon8_scanhash(struct thr_info *thr)
 	if ((tdiff(&current, &(info->last_detect)) > AVA8_MODULE_DETECT_INTERVAL) ||
 		!info->mm_count) {
 		cgtime(&info->last_detect);
-		detect_modules(avalon8);
+		//detect_modules(avalon8);
 	}
 
 	/* Step 3: ASIC configrations (voltage and frequency) */
