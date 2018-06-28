@@ -1913,7 +1913,7 @@ char *recv_line(struct pool *pool)
 	}
 
 	buflen = strlen(pool->sockbuf);
-	//applog(LOG_NOTICE, "%s", pool->sockbuf);
+	applog(LOG_DEBUG, "recv_line: %s", pool->sockbuf);
 	tok = strtok(pool->sockbuf, "\n");
 	if (!tok) {
 		applog(LOG_DEBUG, "Failed to parse a \\n terminated string in recv_line");
@@ -2399,7 +2399,6 @@ bool parse_method(struct pool *pool, char *s)
 	char *task, *seed, *diff;
  	uint8_t data[32];
 	int index;
-	uint32_t s1, s2;
 	uint64_t s64;
 	if (!s)
             return false;
@@ -2531,7 +2530,7 @@ bool auth_stratum(struct pool *pool)
 	sprintf(s, "{\"id\": %d, \"method\": \"mining.authorize\", \"params\": [\"%s\", \"%s\"]}",
 		swork_id++, pool->rpc_user, pool->rpc_pass);
 #else
-	sprintf(s, "{\"id\": %d, \"worker\": \"miner\", \"method\": \"eth_submitLogin\", \"params\": [\"%s\"]}", swork_id++, pool->rpc_user);
+	sprintf(s, "{\"id\": %d, \"worker\": \"miner\", \"method\": \"eth_submitLogin\", \"params\": [\"%s\"]}", 0, pool->rpc_user);
 #endif
 	if (!stratum_send(pool, s, strlen(s)))
 		return ret;
@@ -2580,6 +2579,62 @@ bool auth_stratum(struct pool *pool)
 			swork_id++, opt_suggest_diff);
 		stratum_send(pool, s, strlen(s));
 	} */
+out:
+	json_decref(val);
+	return ret;
+}
+
+bool submit_stratum(struct pool *pool)
+{
+	json_t *val = NULL, *res_val, *err_val;
+	char s[RBUFSIZE], *sret = NULL;
+	json_error_t err;
+	bool ret = false;
+	char nonce[17], task[65], result[65];
+	
+	if (!pool->eth_result_send)
+		return ret;	
+	__bin2hex(nonce, pool->eth_nonce, 8);
+	__bin2hex(task, pool->eth_task, 32);
+	__bin2hex(result, pool->eth_result, 32);	
+	sprintf(s, "{\"id\": %d, \"worker\": \"miner\", \"method\": \"eth_submitWork\", \"params\": [\"0x%s\",\"0x%s\",\"0x%s\"]}", 4, nonce, task, result);
+	//applog(LOG_INFO, "Stratum submit %s", s);
+	if (!stratum_send(pool, s, strlen(s)))
+		return ret;
+
+	/* Parse all data in the queue and anything left should be auth */
+	while (42) {
+		sret = recv_line(pool);
+		if (!sret)
+			return ret;
+		else
+			break;
+	}
+
+	val = JSON_LOADS(sret, &err);
+	free(sret);
+	res_val = json_object_get(val, "result");
+	err_val = json_object_get(val, "error");
+
+	if (!res_val || json_is_false(res_val) || (err_val && !json_is_null(err_val)))  {
+		char *ss;
+
+		if (err_val)
+			ss = json_dumps(err_val, JSON_INDENT(3));
+		else
+			ss = strdup("(unknown reason)");
+		applog(LOG_NOTICE, "Stratum submit failed: %s %s", nonce, result);
+		free(ss);
+
+		suspend_stratum(pool);
+
+		goto out;
+	}
+
+	ret = true;
+	applog(LOG_NOTICE, "Stratum submit success: %s %s", nonce, result);
+	pool->eth_result_send = false;
+	
 out:
 	json_decref(val);
 	return ret;

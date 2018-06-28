@@ -6810,20 +6810,20 @@ out:
 static void *stratum_sthread(void *userdata)
 {
 	struct pool *pool = (struct pool *)userdata;
-	uint64_t last_nonce2 = 0;
-	uint32_t last_nonce = 0;
+	//uint64_t last_nonce2 = 0;
+	//uint32_t last_nonce = 0;
 	char threadname[16];
-
 	pthread_detach(pthread_self());
 
 	snprintf(threadname, sizeof(threadname), "%d/SStratum", pool->pool_no);
 	RenameThread(threadname);
-
+	
 	pool->stratum_q = tq_new();
 	if (!pool->stratum_q)
 		quit(1, "Failed to create stratum_q in stratum_sthread");
-
+	
 	while (42) {
+#if 0
 		char noncehex[12], nonce2hex[20], s[1024];
 		struct stratum_share *sshare;
 		uint32_t *hash32, nonce;
@@ -6831,10 +6831,11 @@ static void *stratum_sthread(void *userdata)
 		uint64_t *nonce2_64;
 		struct work *work;
 		bool submitted;
-
+#endif		
 		if (unlikely(pool->removed))
 			break;
-
+		submit_stratum(pool);
+#if 0
 		work = tq_pop(pool->stratum_q, NULL);
 		if (unlikely(!work))
 			quit(1, "Stratum q returned empty work");
@@ -6940,6 +6941,7 @@ static void *stratum_sthread(void *userdata)
 				       pool->pool_no, ssdiff);
 			}
 		}
+#endif
 	}
 
 	/* Freeze the work queue but don't free up its memory in case there is
