@@ -6463,13 +6463,13 @@ static void hashmeter(int thr_id, uint64_t hashes_done)
 	sd_notifyf(false, "STATUS=%s", statusline);
 #endif
 
-	if (showlog) {
+	/*if (showlog) {
 		if (!curses_active) {
 			printf("%s          \r", statusline);
 			fflush(stdout);
 		} else
 			applog(LOG_INFO, "%s", statusline);
-	}
+	}*/
 }
 
 static void stratum_share_result(json_t *val, json_t *res_val, json_t *err_val,
