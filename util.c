@@ -54,7 +54,6 @@
 #ifndef STRATUM_USER_AGENT
 #define STRATUM_USER_AGENT
 #endif
-
 bool successful_connect = false;
 
 int no_yield(void)
@@ -2355,7 +2354,7 @@ static bool show_message(struct pool *pool, json_t *val)
 	return true;
 }
 
-static void convert_string_array(uint8_t* dest, char* s)
+/*static void convert_string_array(uint8_t* dest, char* s)
 {
         char temp[3] = "  ";
         uint8_t i, j, a = 0;
@@ -2373,7 +2372,7 @@ static void convert_string_array(uint8_t* dest, char* s)
                 }
                 dest[i] = a;
         }
-}
+}*/
 
 static int get_block_index(uint8_t* seed_hash)
 {
@@ -2414,7 +2413,7 @@ bool parse_method(struct pool *pool, char *s)
 	task = json_array_string(result, 0);
         seed = json_array_string(result, 1);
         diff = json_array_string(result, 2);
-	convert_string_array(data, seed);
+	hex2bin(data, seed+2, 64);
 	if (memcmp(data, pool->eth_seed, 32) != 0)
 	{
 		memcpy(pool->eth_seed, data, 32);
@@ -2424,16 +2423,16 @@ bool parse_method(struct pool *pool, char *s)
 		applog(LOG_NOTICE, "ETH block index is %d", pool->block_index);
 	}
 	
-	convert_string_array(data, diff);
-        if (memcmp(data, pool->eth_diff, 32) != 0)
+        hex2bin(data, diff+2, 64);
+	if (memcmp(data, pool->eth_diff, 32) != 0)
         {
                 memcpy(pool->eth_diff, data, 32);
                 applog(LOG_NOTICE, "ETH new diff: %s", diff);
                 pool->eth_diff_change = true;
         }
 	
-	convert_string_array(data, task);
-        if (memcmp(data, pool->eth_task, 32) != 0)
+        hex2bin(data, task+2, 64);
+	if (memcmp(data, pool->eth_task, 32) != 0)
         {
                 memcpy(pool->eth_task, data, 32);
                 applog(LOG_NOTICE, "ETH new task: %s", task);
