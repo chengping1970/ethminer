@@ -6388,8 +6388,8 @@ static void hashmeter(int thr_id, uint64_t hashes_done)
 		device_tdiff = tdiff(&total_tv_end, &cgpu->last_message_tv);
 		copy_time(&cgpu->last_message_tv, &total_tv_end);
 		thr_mhs = (double)hashes_done / device_tdiff / 1000000;
-		applog(LOG_DEBUG, "[thread %d: %"PRIu64" hashes, %.1f mhash/sec]",
-		       thr_id, hashes_done, thr_mhs);
+		/*applog(LOG_DEBUG, "[thread %d: %"PRIu64" hashes, %.1f mhash/sec]",
+		       thr_id, hashes_done, thr_mhs);*/
 		hashes_done /= 1000000;
 
 		mutex_lock(&hash_lock);
@@ -7055,10 +7055,10 @@ static bool pool_active(struct pool *pool, bool pinging)
 	CURL *curl;
 	int uninitialised_var(rolltime);
 
-	if (pool->has_gbt)
+	/*if (pool->has_gbt)
 		applog(LOG_DEBUG, "Retrieving block template from pool %s", pool->rpc_url);
 	else
-		applog(LOG_INFO, "Testing pool %s", pool->rpc_url);
+		applog(LOG_INFO, "Testing pool %s", pool->rpc_url);*/
 
 	/* This is the central point we activate stratum when we can */
 retry_stratum:

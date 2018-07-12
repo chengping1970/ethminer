@@ -50,7 +50,7 @@
 #include "driver-avalon7.h"
 #endif
 
-#define DEFAULT_SOCKWAIT 60
+#define DEFAULT_SOCKWAIT 200
 #ifndef STRATUM_USER_AGENT
 #define STRATUM_USER_AGENT
 #endif
@@ -1912,7 +1912,7 @@ char *recv_line(struct pool *pool)
 	}
 
 	buflen = strlen(pool->sockbuf);
-	applog(LOG_DEBUG, "recv_line: %s", pool->sockbuf);
+	applog(LOG_DEBUG, "%s", pool->sockbuf);
 	tok = strtok(pool->sockbuf, "\n");
 	if (!tok) {
 		applog(LOG_DEBUG, "Failed to parse a \\n terminated string in recv_line");
@@ -2529,7 +2529,8 @@ bool auth_stratum(struct pool *pool)
 	sprintf(s, "{\"id\": %d, \"method\": \"mining.authorize\", \"params\": [\"%s\", \"%s\"]}",
 		swork_id++, pool->rpc_user, pool->rpc_pass);
 #else
-	sprintf(s, "{\"id\": %d, \"worker\": \"miner\", \"method\": \"eth_submitLogin\", \"params\": [\"%s\"]}", 0, pool->rpc_user);
+	sprintf(s, "{\"id\": %d, \"worker\":\"%s\", \"method\": \"eth_submitLogin\", \"params\": [\"%s\"]}", 1, pool->rpc_pass, pool->rpc_user);
+	applog(LOG_INFO, "%s", s);
 #endif
 	if (!stratum_send(pool, s, strlen(s)))
 		return ret;
@@ -2572,6 +2573,7 @@ bool auth_stratum(struct pool *pool)
 	pool->stratum_notify = true;
 	
 	sprintf(s, "{\"id\": %d, \"method\": \"eth_getWork\",\"params\":[]}", 5);
+	applog(LOG_INFO, "%s", s);
 	stratum_send(pool, s, strlen(s));
 	/*if (opt_suggest_diff) {
 		sprintf(s, "{\"id\": %d, \"method\": \"mining.suggest_difficulty\", \"params\": [%d]}",
@@ -2596,8 +2598,9 @@ bool submit_stratum(struct pool *pool)
 	__bin2hex(nonce, pool->eth_nonce, 8);
 	__bin2hex(task, pool->eth_task, 32);
 	__bin2hex(result, pool->eth_result, 32);	
-	sprintf(s, "{\"id\": %d, \"worker\": \"miner\", \"method\": \"eth_submitWork\", \"params\": [\"0x%s\",\"0x%s\",\"0x%s\"]}", 4, nonce, task, result);
-	//applog(LOG_INFO, "Stratum submit %s", s);
+	sprintf(s, "{\"id\": %d, \"worker\":\"%s\", \"method\": \"eth_submitWork\", \"params\": [\"0x%s\",\"0x%s\",\"0x%s\"]}", 4, pool->rpc_pass, nonce, task, result);
+	applog(LOG_INFO, "%s", s);
+	pool->eth_result_send = false;
 	if (!stratum_send(pool, s, strlen(s)))
 		return ret;
 
@@ -2609,7 +2612,7 @@ bool submit_stratum(struct pool *pool)
 		else
 			break;
 	}
-
+	
 	val = JSON_LOADS(sret, &err);
 	free(sret);
 	res_val = json_object_get(val, "result");
@@ -2625,15 +2628,15 @@ bool submit_stratum(struct pool *pool)
 		applog(LOG_NOTICE, "Stratum submit failed: %s %s", nonce, result);
 		free(ss);
 
-		suspend_stratum(pool);
+		//suspend_stratum(pool);
+		//restart_stratum(pool);
 
 		goto out;
 	}
 
 	ret = true;
 	applog(LOG_NOTICE, "Stratum submit success: %s %s", nonce, result);
-	pool->eth_result_send = false;
-	
+
 out:
 	json_decref(val);
 	return ret;
